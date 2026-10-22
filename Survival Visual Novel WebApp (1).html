@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Последний Периметр: Хроники Пустоши</title>
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Play:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        apoc: {
+                            bg: '#080a07',
+                            panel: '#111610',
+                            panelDark: '#0b0e0a',
+                            border: '#233020',
+                            borderLight: '#384d33',
+                            green: '#39ff14',
+                            darkgreen: '#13330b',
+                            amber: '#ffb000',
+                            red: '#ff3333',
+                            muted: '#54664e'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['"Fira Code"', 'monospace'],
+                        sans: ['"Play"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #080a07;
+            color: #d1d5db;
+            font-family: 'Play', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow-x: hidden;
+        }
+
+        /* Scanline & CRT Effect */
+        .scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.35) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #080a07;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #233020;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #39ff14;
+        }
+
+        /* Flash effects */
+        @keyframes damage-flash {
+            0% { background-color: rgba(255, 51, 51, 0.4); }
+            100% { background-color: transparent; }
+        }
+        .damage-effect {
+            animation: damage-flash 0.4s ease-out;
+        }
+
+        @keyframes rad-flash {
+            0% { background-color: rgba(57, 255, 20, 0.25); }
+            100% { background-color: transparent; }
+        }
+        .rad-effect {
+            animation: rad-flash 0.5s ease-out;
+        }
+
+        .crt-glow {
+            text-shadow: 0 0 6px rgba(57, 255, 20, 0.5);
+        }
+
+        .border-glow {
+            box-shadow: 0 0 12px rgba(57, 255, 20, 0.18);
+        }
+
+        .vignette {
+            box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.85);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between overflow-hidden relative font-sans select-none">
+    
+    <!-- CRT Overlay -->
+    <div class="scanlines absolute inset-0 z-50"></div>
+
+    <!-- Screen Flash Container -->
+    <div id="screen-overlay" class="absolute inset-0 pointer-events-none z-40"></div>
+
+    <!-- TOP STATUS HEADER -->
+    <header class="bg-apoc-panel border-b border-apoc-border p-2 z-30 shrink-0">
+        <div class="max-w-md mx-auto flex items-center justify-between text-xs font-mono">
+            <div class="flex items-center space-x-2">
+                <span class="text-apoc-green font-bold crt-glow">
+                    <i class="fa-solid fa-calendar-day mr-1"></i>ДЕНЬ <span id="stat-day">1</span>
+                </span>
+                <span class="text-apoc-muted">|</span>
+                <span class="text-gray-300 truncate max-w-[130px]" id="stat-location">Убежище №42</span>
+            </div>
+
+            <!-- Header Quick Actions -->
+            <div class="flex items-center space-x-3">
+                <button onclick="saveGame(true)" class="text-apoc-muted hover:text-apoc-green transition-colors" title="Сохранить">
+                    <i class="fa-solid fa-floppy-disk text-sm"></i>
+                </button>
+                <button onclick="resetGamePrompt()" class="text-apoc-muted hover:text-apoc-red transition-colors" title="Перезапуск">
+                    <i class="fa-solid fa-rotate-right text-sm"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Vital Bars Grid -->
+        <div class="max-w-md mx-auto grid grid-cols-3 gap-1.5 mt-2 text-[10px] font-mono">
+            <!-- Health -->
+            <div class="bg-black/50 p-1 rounded border border-apoc-border flex flex-col">
+                <div class="flex justify-between mb-0.5 text-red-400">
+                    <span><i class="fa-solid fa-heart mr-1"></i>ХП</span>
+                    <span id="val-hp">100%</span>
+                </div>
+                <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
+                    <div id="bar-hp" class="bg-red-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- Hunger -->
+            <div class="bg-black/50 p-1 rounded border border-apoc-border flex flex-col">
+                <div class="flex justify-between mb-0.5 text-amber-400">
+                    <span><i class="fa-solid fa-drumstick-bite mr-1"></i>СЫТОСТЬ</span>
+                    <span id="val-hunger">100%</span>
+                </div>
+                <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
+                    <div id="bar-hunger" class="bg-amber-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- Thirst -->
+            <div class="bg-black/50 p-1 rounded border border-apoc-border flex flex-col">
+                <div class="flex justify-between mb-0.5 text-blue-400">
+                    <span><i class="fa-solid fa-droplet mr-1"></i>ЖАЖДА</span>
+                    <span id="val-thirst">100%</span>
+                </div>
+                <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
+                    <div id="bar-thirst" class="bg-blue-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- Energy -->
+            <div class="bg-black/50 p-1 rounded border border-apoc-border flex flex-col">
+                <div class="flex justify-between mb-0.5 text-yellow-300">
+                    <span><i class="fa-solid fa-bolt mr-1"></i>ЭНЕРГИЯ</span>
+                    <span id="val-energy">100%</span>
+                </div>
+                <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
+                    <div id="bar-energy" class="bg-yellow-400 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- Sanity -->
+            <div class="bg-black/50 p-1 rounded border border-apoc-border flex flex-col">
+                <div class="flex justify-between mb-0.5 text-purple-400">
+                    <span><i class="fa-solid fa-brain mr-1"></i>РАССУДОК</span>
+                    <span id="val-sanity">100%</span>
+                </div>
+                <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
+                    <div id="bar-sanity" class="bg-purple-500 h-full w-full transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- Radiation -->
+            <div class="bg-black/50 p-1 rounded border border-apoc-border flex flex-col">
+                <div class="flex justify-between mb-0.5 text-apoc-green">
+                    <span><i class="fa-solid fa-radiation mr-1"></i>РАД</span>
+                    <span id="val-rad">0%</span>
+                </div>
+                <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
+                    <div id="bar-rad" class="bg-apoc-green h-full w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN APP VIEWPORT -->
+    <main id="app-viewport" class="flex-1 overflow-y-auto p-3 max-w-md mx-auto w-full z-20 relative">
+
+        <!-- TAB 1: STORY NOVEL -->
+        <section id="tab-story" class="tab-content space-y-3">
+            
+            <!-- GRAPHICAL SCENE HEADER BANNER -->
+            <div class="relative bg-apoc-panel border border-apoc-border rounded-xl overflow-hidden border-glow">
+                
+                <!-- Scene Art Image Container -->
+                <div id="scene-art" class="h-44 bg-cover bg-center transition-all duration-700 relative vignette flex flex-col justify-between p-2.5">
+                    
+                    <!-- Atmospheric Header Indicators -->
+                    <div class="flex justify-between items-center z-10">
+                        <span id="scene-tag" class="text-[10px] font-mono bg-black/70 text-apoc-green border border-apoc-green/40 px-2 py-0.5 rounded backdrop-blur-sm uppercase">
+                            Локация
+                        </span>
+                        <span id="scene-weather" class="text-[10px] font-mono bg-black/70 text-apoc-amber border border-apoc-amber/40 px-2 py-0.5 rounded backdrop-blur-sm">
+                            <i class="fa-solid fa-cloud-sun-rain mr-1"></i>Пеплопад
+                        </span>
+                    </div>
+
+                    <!-- NPC / Event Overlay Banner (If Active) -->
+                    <div id="npc-overlay" class="hidden z-10 flex items-center space-x-2 bg-black/85 p-1.5 rounded-lg border border-apoc-border backdrop-blur-md">
+                        <img id="npc-avatar" src="" class="w-10 h-10 rounded border border-apoc-green object-cover" alt="NPC">
+                        <div class="font-mono">
+                            <div id="npc-name" class="text-xs font-bold text-apoc-green"></div>
+                            <div id="npc-role" class="text-[9px] text-gray-400"></div>
+                        </div>
+                    </div>
+
+                    <!-- Gradient Bottom Fade -->
+                    <div class="absolute inset-0 bg-gradient-to-t from-apoc-panel via-transparent to-black/30 pointer-events-none"></div>
+                </div>
+                
+                <!-- Narrative Text Area -->
+                <div class="p-3 bg-apoc-panel">
+                    <h2 id="scene-title" class="text-sm font-bold text-apoc-green font-mono mb-1.5 border-b border-apoc-border/60 pb-1 flex items-center justify-between">
+                        <span>Загрузка...</span>
+                    </h2>
+                    <p id="scene-text" class="text-xs text-gray-300 leading-relaxed font-sans min-h-[60px] mb-2">
+                        Загрузка системы...
+                    </p>
+                    
+                    <!-- Dynamic Feedback Message -->
+                    <div id="action-feedback" class="hidden p-2 rounded bg-black/70 border border-apoc-amber text-[11px] font-mono text-apoc-amber mb-2 animate-pulse">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Choice Action Buttons Container -->
+            <div id="choices-container" class="space-y-2 pb-6">
+                <!-- Dynamically generated buttons -->
+            </div>
+        </section>
+
+        <!-- TAB 2: INVENTORY & CRAFTING -->
+        <section id="tab-inventory" class="tab-content hidden space-y-3">
+            <!-- Sub Navigation Tabs -->
+            <div class="flex border-b border-apoc-border font-mono text-xs">
+                <button id="btn-sub-inv" onclick="switchSubTab('inv')" class="flex-1 py-2 text-center text-apoc-green border-b-2 border-apoc-green font-bold">Инвентарь</button>
+                <button id="btn-sub-craft" onclick="switchSubTab('craft')" class="flex-1 py-2 text-center text-gray-400 hover:text-white">Крафтинг</button>
+            </div>
+
+            <!-- Inventory Panel -->
+            <div id="subtab-inv" class="space-y-2">
+                <div class="flex justify-between items-center text-xs font-mono text-gray-400 px-1">
+                    <span>СЛОТЫ: <span id="inv-capacity" class="text-apoc-green font-bold">0/10</span></span>
+                    <span id="weight-capacity" class="text-apoc-muted">ВЕС: 0.0 кг</span>
+                </div>
+                <div id="inventory-grid" class="grid grid-cols-1 gap-2">
+                    <!-- Dynamic Items -->
+                </div>
+            </div>
+
+            <!-- Crafting Panel -->
+            <div id="subtab-craft" class="hidden space-y-2">
+                <div class="text-xs font-mono text-gray-400 px-1 mb-2">ЧЕРТЕЖИ И РЕЦЕПТЫ:</div>
+                <div id="crafting-list" class="space-y-2">
+                    <!-- Dynamic Recipes -->
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: MAP / SCAVENGE -->
+        <section id="tab-scavenge" class="tab-content hidden space-y-3">
+            <div class="bg-apoc-panel p-3 rounded-xl border border-apoc-border">
+                <h3 class="text-xs font-mono text-apoc-green font-bold mb-1 flex items-center">
+                    <i class="fa-solid fa-map-location-dot mr-1.5"></i> РАДИОЛОКАЦИОННАЯ КАРТА
+                </h3>
+                <p class="text-[11px] text-gray-400">Выбирайте секторы для поиска ресурсов. Каждая вылазка истощает силы и подвергает вас радиации.</p>
+            </div>
+
+            <!-- Map Zone Cards -->
+            <div class="grid grid-cols-1 gap-3">
+                
+                <!-- Suburbs Card -->
+                <div class="bg-apoc-panel border border-apoc-border rounded-xl overflow-hidden hover:border-apoc-green transition-all">
+                    <div class="h-20 bg-cover bg-center relative" style="background-image: url('https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop');">
+                        <div class="absolute inset-0 bg-black/50 vignette"></div>
+                        <span class="absolute top-2 left-2 text-[9px] font-mono bg-black/70 text-green-400 border border-green-500/40 px-1.5 py-0.5 rounded">Опасность: Низкая</span>
+                    </div>
+                    <div class="p-2.5 flex justify-between items-center">
+                        <div>
+                            <div class="text-xs font-bold text-gray-200 font-mono">Заброшенный пригород</div>
+                            <div class="text-[10px] text-gray-400">Лут: Еда, Ткань, Грязная вода</div>
+                            <div class="text-[9px] text-apoc-muted font-mono mt-0.5">Радиация: ~5% | Энергия: -15</div>
+                        </div>
+                        <button onclick="startScavenge('suburbs')" class="px-3 py-1.5 bg-apoc-darkgreen border border-apoc-green text-apoc-green font-mono text-xs rounded-lg hover:bg-apoc-green hover:text-black transition-colors">
+                            Искать
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Industrial Factory Card -->
+                <div class="bg-apoc-panel border border-apoc-border rounded-xl overflow-hidden hover:border-apoc-green transition-all">
+                    <div class="h-20 bg-cover bg-center relative" style="background-image: url('https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?q=80&w=600&auto=format&fit=crop');">
+                        <div class="absolute inset-0 bg-black/50 vignette"></div>
+                        <span class="absolute top-2 left-2 text-[9px] font-mono bg-black/70 text-amber-400 border border-amber-500/40 px-1.5 py-0.5 rounded">Опасность: Средняя</span>
+                    </div>
+                    <div class="p-2.5 flex justify-between items-center">
+                        <div>
+                            <div class="text-xs font-bold text-gray-200 font-mono">Промзона "Октябрь"</div>
+                            <div class="text-[10px] text-gray-400">Лут: Металлолом, Фильтры, Детали</div>
+                            <div class="text-[9px] text-apoc-muted font-mono mt-0.5">Радиация: ~15% | Энергия: -25</div>
+                        </div>
+                        <button onclick="startScavenge('factory')" class="px-3 py-1.5 bg-apoc-darkgreen border border-apoc-green text-apoc-green font-mono text-xs rounded-lg hover:bg-apoc-green hover:text-black transition-colors">
+                            Искать
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Military Bunker Card -->
+                <div class="bg-apoc-panel border border-apoc-border rounded-xl overflow-hidden hover:border-apoc-green transition-all">
+                    <div class="h-20 bg-cover bg-center relative" style="background-image: url('https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=600&auto=format&fit=crop');">
+                        <div class="absolute inset-0 bg-black/50 vignette"></div>
+                        <span class="absolute top-2 left-2 text-[9px] font-mono bg-black/70 text-red-400 border border-red-500/40 px-1.5 py-0.5 rounded">Опасность: Высокая</span>
+                    </div>
+                    <div class="p-2.5 flex justify-between items-center">
+                        <div>
+                            <div class="text-xs font-bold text-gray-200 font-mono">Секретный Бункер №7</div>
+                            <div class="text-[10px] text-gray-400">Лут: Аптечки, Антирадин, Защита</div>
+                            <div class="text-[9px] text-apoc-muted font-mono mt-0.5">Радиация: ~30% | Энергия: -35</div>
+                        </div>
+                        <button onclick="startScavenge('bunker')" class="px-3 py-1.5 bg-apoc-darkgreen border border-apoc-green text-apoc-green font-mono text-xs rounded-lg hover:bg-apoc-green hover:text-black transition-colors">
+                            Искать
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Scavenge Log Result -->
+            <div id="scavenge-result" class="hidden bg-black/80 p-3 rounded-xl border border-apoc-border font-mono text-xs space-y-2">
+                <div class="text-apoc-amber font-bold border-b border-apoc-border pb-1 flex items-center justify-between">
+                    <span>ОТЧЕТ О ВЫЛАЗКЕ</span>
+                    <i class="fa-solid fa-satellite-dish"></i>
+                </div>
+                <p id="scavenge-text" class="text-gray-300 text-[11px]"></p>
+                <div id="scavenge-loot" class="flex flex-wrap gap-1 pt-1"></div>
+            </div>
+        </section>
+
+        <!-- TAB 4: LOG / DIARY -->
+        <section id="tab-log" class="tab-content hidden space-y-3">
+            <div class="bg-apoc-panel p-3 rounded-xl border border-apoc-border">
+                <h3 class="text-xs font-mono text-apoc-green font-bold mb-1 flex items-center">
+                    <i class="fa-solid fa-book-journal-whills mr-1.5"></i> ЖУРНАЛ НАБЛЮДЕНИЙ
+                </h3>
+                <p class="text-[11px] text-gray-400">Хроника выживания и отмеченные ключевые решения.</p>
+            </div>
+            <div id="diary-entries" class="space-y-2 font-mono text-xs">
+                <!-- Log entries added dynamically -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- BOTTOM TAB NAVIGATION BAR -->
+    <nav class="bg-apoc-panel border-t border-apoc-border p-1.5 z-30 shrink-0">
+        <div class="max-w-md mx-auto grid grid-cols-4 gap-1 text-center font-mono">
+            <button onclick="switchTab('story')" id="nav-story" class="py-2 flex flex-col items-center text-apoc-green">
+                <i class="fa-solid fa-book-open text-base mb-0.5"></i>
+                <span class="text-[10px]">Сюжет</span>
+            </button>
+            <button onclick="switchTab('inventory')" id="nav-inventory" class="py-2 flex flex-col items-center text-gray-400 hover:text-gray-200">
+                <i class="fa-solid fa-box-archive text-base mb-0.5"></i>
+                <span class="text-[10px]">Инвентарь</span>
+            </button>
+            <button onclick="switchTab('scavenge')" id="nav-scavenge" class="py-2 flex flex-col items-center text-gray-400 hover:text-gray-200">
+                <i class="fa-solid fa-compass text-base mb-0.5"></i>
+                <span class="text-[10px]">Вылазки</span>
+            </button>
+            <button onclick="switchTab('log')" id="nav-log" class="py-2 flex flex-col items-center text-gray-400 hover:text-gray-200">
+                <i class="fa-solid fa-list-check text-base mb-0.5"></i>
+                <span class="text-[10px]">Дневник</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- ITEM DETAIL / PREVIEW MODAL -->
+    <div id="item-modal" class="hidden fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
+        <div class="bg-apoc-panel border border-apoc-green max-w-xs w-full p-4 rounded-xl border-glow text-center space-y-3 font-mono">
+            <div class="h-32 w-full rounded-lg bg-cover bg-center border border-apoc-border relative vignette" id="item-modal-img"></div>
+            <div>
+                <h3 id="item-modal-title" class="text-sm font-bold text-apoc-green"></h3>
+                <p id="item-modal-desc" class="text-[11px] text-gray-300 font-sans mt-1"></p>
+            </div>
+            <div id="item-modal-stats" class="text-[10px] text-apoc-amber border-y border-apoc-border py-1.5"></div>
+            <div class="flex justify-center space-x-2 text-xs">
+                <button id="item-modal-use-btn" class="px-3 py-1.5 bg-apoc-darkgreen border border-apoc-green text-apoc-green rounded hover:bg-apoc-green hover:text-black">Употребить</button>
+                <button onclick="closeItemModal()" class="px-3 py-1.5 bg-black/60 border border-gray-700 text-gray-400 rounded">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GENERAL ALERT MODAL -->
+    <div id="modal-container" class="hidden fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
+        <div class="bg-apoc-panel border border-apoc-green max-w-xs w-full p-4 rounded-xl border-glow text-center space-y-3">
+            <h3 id="modal-title" class="text-sm font-mono text-apoc-green font-bold"></h3>
+            <p id="modal-msg" class="text-xs text-gray-300 font-sans"></p>
+            <div id="modal-buttons" class="flex justify-center space-x-2 font-mono text-xs"></div>
+        </div>
+    </div>
+
+    <!-- GAME ENGINE CODE -->
+    <script>
+        // --- TELEGRAM SDK INITIALIZATION ---
+        const tg = window.Telegram ? window.Telegram.WebApp : null;
+        if (tg) {
+            tg.expand();
+            tg.ready();
+            tg.setHeaderColor('#111610');
+            tg.setBackgroundColor('#080a07');
+        }
+
+        function triggerHaptic(type = 'impact', style = 'medium') {
+            if (tg && tg.HapticFeedback) {
+                if (type === 'impact') tg.HapticFeedback.impactOccurred(style);
+                if (type === 'notification') tg.HapticFeedback.notificationOccurred(style);
+                if (type === 'selection') tg.HapticFeedback.selectionChanged();
+            }
+        }
+
+        // --- EXTENDED ITEMS DATABASE WITH HIGH-RES ARTWORK ---
+        const ITEMS_DB = {
+            'canned_food': { 
+                name: 'Консервы', 
+                icon: 'fa-box-open', 
+                type: 'food', 
+                val: 35, 
+                desc: 'Армейские консервы с тушенкой. Питательно и вкусно.', 
+                weight: 0.5,
+                img: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?q=80&w=400&auto=format&fit=crop'
+            },
+            'dirty_water': { 
+                name: 'Грязная вода', 
+                icon: 'fa-bottle-water', 
+                type: 'drink_dirty', 
+                val: 25, 
+                rad: 10, 
+                desc: 'Мутная вода из ржавых труб. Спасает от жажды, но радиационна.', 
+                weight: 0.5,
+                img: 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?q=80&w=400&auto=format&fit=crop'
+            },
+            'clean_water': { 
+                name: 'Чистая вода', 
+                icon: 'fa-bottle-droplet', 
+                type: 'drink', 
+                val: 45, 
+                desc: 'Очищенная бутилированная питьевая вода без примесей.', 
+                weight: 0.5,
+                img: 'https://images.unsplash.com/photo-1523362628745-0c100150b504?q=80&w=400&auto=format&fit=crop'
+            },
+            'medkit': { 
+                name: 'Аптечка', 
+                icon: 'fa-briefcase-medical', 
+                type: 'heal', 
+                val: 50, 
+                desc: 'Военный медицинский комплект со шприцами и бинтами.', 
+                weight: 0.8,
+                img: 'https://images.unsplash.com/photo-1603398938378-e54eab446dde?q=80&w=400&auto=format&fit=crop'
+            },
+            'anti_rad': { 
+                name: 'Антирадин', 
+                icon: 'fa-pills', 
+                type: 'antirad', 
+                val: 40, 
+                desc: 'Препарат для эффективного выведения радионуклидов из крови.', 
+                weight: 0.1,
+                img: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?q=80&w=400&auto=format&fit=crop'
+            },
+            'scrap': { 
+                name: 'Металлолом', 
+                icon: 'fa-cubes', 
+                type: 'resource', 
+                desc: 'Обрезки труб, пластины и проволока для крафта оборудования.', 
+                weight: 1.0,
+                img: 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?q=80&w=400&auto=format&fit=crop'
+            },
+            'cloth': { 
+                name: 'Ткань', 
+                icon: 'fa-shirt', 
+                type: 'resource', 
+                desc: 'Прочные обрывки текстиля для создания бинтов и фильтров.', 
+                weight: 0.2,
+                img: 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?q=80&w=400&auto=format&fit=crop'
+            },
+            'crowbar': { 
+                name: 'Лом', 
+                icon: 'fa-hammer', 
+                type: 'tool', 
+                desc: 'Тяжелый стальной лом. Универсален для вскрытия дверей и ближнего боя.', 
+                weight: 2.0,
+                img: 'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?q=80&w=400&auto=format&fit=crop'
+            },
+            'knife': { 
+                name: 'Охотничий нож', 
+                icon: 'fa-knife-kitchen', 
+                type: 'weapon', 
+                attack: 15, 
+                desc: 'Острый боевой нож из закаленной стали.', 
+                weight: 0.5,
+                img: 'https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?q=80&w=400&auto=format&fit=crop'
+            },
+            'filter': { 
+                name: 'Фильтр', 
+                icon: 'fa-filter', 
+                type: 'resource', 
+                desc: 'Угольный фильтрующий элемент для очистки воды и воздуха.', 
+                weight: 0.3,
+                img: 'https://images.unsplash.com/photo-1517646287270-a5a9ca602e5c?q=80&w=400&auto=format&fit=crop'
+            }
+        };
+
+        const CRAFT_RECIPES = [
+            { id: 'clean_water', name: 'Очистить воду', req: { 'dirty_water': 1, 'filter': 1 }, res: { 'clean_water': 1 } },
+            { id: 'medkit', name: 'Собрать аптечку', req: { 'cloth': 2, 'clean_water': 1 }, res: { 'medkit': 1 } },
+            { id: 'crowbar', name: 'Сковать лом', req: { 'scrap': 3 }, res: { 'crowbar': 1 } }
+        ];
+
+        // --- GAME STATE ---
+        let gameState = {
+            day: 1,
+            locationName: 'Бункер №42',
+            currentScene: 'start_1',
+            stats: {
+                hp: 100,
+                hunger: 90,
+                thirst: 85,
+                energy: 100,
+                sanity: 100,
+                rad: 0
+            },
+            inventory: [
+                { id: 'canned_food', count: 2 },
+                { id: 'dirty_water', count: 1 },
+                { id: 'scrap', count: 2 }
+            ],
+            maxSlots: 10,
+            diary: [
+                "День 1: Система укрытия перешла в критический режим. Придется искать выходы на поверхность."
+            ],
+            flags: {}
+        };
+
+        // --- RICH VISUAL NOVEL STORY NODES ---
+        const STORY_NODES = {
+            'start_1': {
+                title: 'Аварийное Пробуждение',
+                tag: 'Укрытие №42',
+                weather: 'Сумерки / Сырость',
+                art: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=600&auto=format&fit=crop',
+                text: 'Вы приходите в себя под оглушительный вой герметической сирены. Вокруг висит плотный туман из гари и радиоактивной пыли. Гермодверь укрытия слегка перекошена, а счетчик Гейгера издает тревожные щелчки.',
+                choices: [
+                    { text: 'Осмотреть аварийные ящики', next: 'search_shelter', risk: 'safe', icon: 'fa-magnifying-glass' },
+                    { text: 'Открыть гермодверь и выйти', next: 'exit_shelter', risk: 'warn', icon: 'fa-door-open', req: { energy: 10 } }
+                ]
+            },
+            'search_shelter': {
+                title: 'Поиск Ресурсов',
+                tag: 'Склад Бункера',
+                weather: 'Тень',
+                art: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop',
+                text: 'В полуразрушенном запертом стеллаже вы находите сменный угольный фильтр для воды и пару чистых отрезов ткани. Отличная находка перед выходом.',
+                onEnter: () => {
+                    addItem('filter', 1);
+                    addItem('cloth', 2);
+                },
+                choices: [
+                    { text: 'Подготовиться и выйти наружу', next: 'exit_shelter', risk: 'safe', icon: 'fa-person-walking' }
+                ]
+            },
+            'exit_shelter': {
+                title: 'Мертвый Город',
+                tag: 'Поверхность',
+                weather: 'Пеплопад / Ветер',
+                art: 'https://images.unsplash.com/photo-1478760329108-5c3ed9d495a0?q=80&w=600&auto=format&fit=crop',
+                text: 'Вы поднимаетесь на поверхность. Небо затянуто свинцовыми тучами, из которых медленно оседает серый пепел. На горизонте возвышается полуразрушенная Вышка Связи и сгоревший ТРЦ.',
+                onEnter: () => {
+                    updateStat('energy', -10);
+                    updateStat('rad', 5);
+                },
+                choices: [
+                    { text: 'Отправиться к Вышке связи', next: 'tower_approach', risk: 'warn', icon: 'fa-tower-cell' },
+                    { text: 'Исследовать Торговый Центр', next: 'mall_approach', risk: 'warn', icon: 'fa-store' },
+                    { text: 'Вернуться в бункер и передохнуть', next: 'rest_shelter', risk: 'safe', icon: 'fa-bed' }
+                ]
+            },
+            'rest_shelter': {
+                title: 'Отдых в Сумраке',
+                tag: 'Укрытие №42',
+                weather: 'Ночь',
+                art: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop',
+                text: 'Заблокировав массивный засов гермодвери, вы ложитесь на спальник. Время тянется медленно, но ваши силы постепенно восстанавливаются.',
+                onEnter: () => {
+                    passDay();
+                    updateStat('energy', 40);
+                    updateStat('hunger', -15);
+                    updateStat('thirst', -20);
+                },
+                choices: [
+                    { text: 'Проснуться и вылазить в Пустошь', next: 'exit_shelter', risk: 'safe', icon: 'fa-sun' }
+                ]
+            },
+            'tower_approach': {
+                title: 'Вышка Связи',
+                tag: 'Сектор 4',
+                weather: 'Густой Туман',
+                art: 'https://images.unsplash.com/photo-1542224566-6e85f2e6772f?q=80&w=600&auto=format&fit=crop',
+                text: 'Территория вокруг вышки огорожена колючей проволокой. Возле будки охраны лежит запертый стальной ящик и иссохшие останки человека в военной форме.',
+                choices: [
+                    { text: 'Вскрыть стальной ящик', next: 'tower_open_box', risk: 'safe', icon: 'fa-box', reqItem: 'crowbar' },
+                    { text: 'Обыскать останки военного', next: 'tower_search_dead', risk: 'danger', icon: 'fa-skull' },
+                    { text: 'Вернуться на перекресток', next: 'exit_shelter', risk: 'safe', icon: 'fa-arrow-left' }
+                ]
+            },
+            'tower_open_box': {
+                title: 'Запертый Ящик',
+                tag: 'Сектор 4',
+                weather: 'Густой Туман',
+                art: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?q=80&w=600&auto=format&fit=crop',
+                text: 'С треском поддев крышку ломом, вы вскрываете замок! Внутри обнаружена целая армейская аптечка и упаковка антирадина.',
+                onEnter: () => {
+                    addItem('medkit', 1);
+                    addItem('anti_rad', 1);
+                },
+                choices: [
+                    { text: 'Обыскать тело военного', next: 'tower_search_dead', risk: 'danger', icon: 'fa-skull' },
+                    { text: 'Назад к перекрестку', next: 'exit_shelter', risk: 'safe', icon: 'fa-arrow-left' }
+                ]
+            },
+            'tower_search_dead': {
+                title: 'Засада Мутанта',
+                tag: 'Сектор 4',
+                weather: 'Шторм',
+                art: 'https://images.unsplash.com/photo-1579373903781-fd5c0c30c4cd?q=80&w=600&auto=format&fit=crop',
+                text: 'Как только вы касаетесь разгрузки солдата, из густого тумана выпрыгивает оскаленный слепой пес-мутант с горящими червоточинами вместо глаз!',
+                choices: [
+                    { text: 'Отбиться Ножом', next: 'fight_dog_knife', risk: 'warn', icon: 'fa-knife-kitchen', reqItem: 'knife' },
+                    { text: 'Оглушить Ломом', next: 'fight_dog_crowbar', risk: 'warn', icon: 'fa-hammer', reqItem: 'crowbar' },
+                    { text: 'Спасаться бегством', next: 'run_from_dog', risk: 'danger', icon: 'fa-person-running' }
+                ]
+            },
+            'fight_dog_knife': {
+                title: 'Схватка со Зверем',
+                tag: 'Бой',
+                weather: 'Шторм',
+                art: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=600&auto=format&fit=crop',
+                text: 'Точным и быстрым ударом ножа вы отбиваете атаку мутанта. Пес со скулежом скрывается в тумане. В кармане солдата вы находите ключ-карту от Военного Бункера!',
+                onEnter: () => {
+                    gameState.flags.hasBunkerKey = true;
+                    updateStat('energy', -15);
+                    logDiary("Нашел ключ-карту военного у Вышки связи.");
+                },
+                choices: [
+                    { text: 'Вернуться к руинам города', next: 'exit_shelter', risk: 'safe', icon: 'fa-arrow-left' }
+                ]
+            },
+            'fight_dog_crowbar': {
+                title: 'Удар Сталью',
+                tag: 'Бой',
+                weather: 'Шторм',
+                art: 'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?q=80&w=600&auto=format&fit=crop',
+                text: 'Мощным размахом лома вы отбрасываете зверя. Мутант падают на куски бетона и уползает. Вы находите чистую воду и сухпаек.',
+                onEnter: () => {
+                    addItem('clean_water', 2);
+                    addItem('canned_food', 1);
+                    updateStat('energy', -20);
+                },
+                choices: [
+                    { text: 'Вернуться к развилке', next: 'exit_shelter', risk: 'safe', icon: 'fa-arrow-left' }
+                ]
+            },
+            'run_from_dog': {
+                title: 'Отчаянный Побег',
+                tag: 'Травма',
+                weather: 'Пеплопад',
+                art: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop',
+                text: 'Вы бросаетесь прочь, но монстр успевает глубоко полоснуть когтями вашу ногу. Вы теряете здоровье и едва уносите ноги.',
+                onEnter: () => {
+                    updateStat('hp', -25);
+                    updateStat('sanity', -15);
+                },
+                choices: [
+                    { text: 'Зализать раны в безопасном месте', next: 'exit_shelter', risk: 'safe', icon: 'fa-shield-halved' }
+                ]
+            },
+            'mall_approach': {
+                title: 'Торговый Центр',
+                tag: 'Сектор 2',
+                weather: 'Мрак',
+                art: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?q=80&w=600&auto=format&fit=crop',
+                npc: {
+                    name: 'Марк Торговец',
+                    role: 'Выживший / Скиталец',
+                    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop'
+                },
+                text: 'В полумраке обрушенного вестибюля вас встречает силуэт человека с самодельным дробовиком. "Тише, выживший. Назови цель визита!" — раздается хриплый голос.',
+                choices: [
+                    { text: 'Предложить обмен ресурсами', next: 'mall_trade', risk: 'safe', icon: 'fa-handshake' },
+                    { text: 'Проскользнуть мимо в стелсе', next: 'mall_stealth', risk: 'warn', icon: 'fa-user-ninja', req: { sanity: 50 } }
+                ]
+            },
+            'mall_trade': {
+                title: 'Лавка Торговца',
+                tag: 'Торговля',
+                weather: 'Укрытие',
+                art: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?q=80&w=600&auto=format&fit=crop',
+                npc: {
+                    name: 'Марк Торговец',
+                    role: 'Скиталец',
+                    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop'
+                },
+                text: '— Меня зовут Марк. Мне остро нужен металлолом для укрепления лагеря. Обменяю 2 куска лома на острый Охотничий нож.',
+                choices: [
+                    { text: 'Обменять Металлолом (2 шт) на Нож', next: 'mall_do_trade', risk: 'safe', icon: 'fa-repeat', reqItem: 'scrap', reqCount: 2 },
+                    { text: 'Попрощаться и уйти', next: 'exit_shelter', risk: 'safe', icon: 'fa-person-walking-arrow-loop-left' }
+                ]
+            },
+            'mall_do_trade': {
+                title: 'Удачная Сделка',
+                tag: 'Торговля',
+                weather: 'Укрытие',
+                art: 'https://images.unsplash.com/photo-1590080875515-8a3a8dc5735e?q=80&w=600&auto=format&fit=crop',
+                text: 'Торговец удовлетворенно кивает и взвешивает стальной нож на ладони. "Держи. Это качественная сталь, пригодится против тварей."',
+                onEnter: () => {
+                    removeItem('scrap', 2);
+                    addItem('knife', 1);
+                },
+                choices: [
+                    { text: 'Покинуть торговый центр', next: 'exit_shelter', risk: 'safe', icon: 'fa-arrow-left' }
+                ]
+            },
+            'mall_stealth': {
+                title: 'Теневой Проход',
+                tag: 'Стелс',
+                weather: 'Тень',
+                art: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop',
+                text: 'Бесшумно обойдя сторожевой пост Марка через вентиляционную шахту, вы проникаете на склад. Там удается раздобыть консервы и сухпайки.',
+                onEnter: () => {
+                    addItem('canned_food', 2);
+                    addItem('clean_water', 1);
+                },
+                choices: [
+                    { text: 'Вылезти наружу', next: 'exit_shelter', risk: 'safe', icon: 'fa-arrow-left' }
+                ]
+            }
+        };
+
+        // --- RENDER SCENE ENGINE ---
+        function renderScene(sceneId) {
+            const scene = STORY_NODES[sceneId];
+            if (!scene) return;
+
+            gameState.currentScene = sceneId;
+
+            // Execute scene enter hook
+            if (scene.onEnter) scene.onEnter();
+
+            // Set Background Art
+            const sceneArt = document.getElementById('scene-art');
+            if (scene.art) {
+                sceneArt.style.backgroundImage = `url('${scene.art}')`;
+            }
+
+            // Weather & Tags
+            document.getElementById('scene-tag').innerText = scene.tag || 'Событие';
+            document.getElementById('scene-weather').innerHTML = `<i class="fa-solid fa-cloud-sun-rain mr-1"></i>${scene.weather || 'Ясно'}`;
+
+            // NPC Overlay Handling
+            const npcBox = document.getElementById('npc-overlay');
+            if (scene.npc) {
+                document.getElementById('npc-avatar').src = scene.npc.avatar;
+                document.getElementById('npc-name').innerText = scene.npc.name;
+                document.getElementById('npc-role').innerText = scene.npc.role;
+                npcBox.classList.remove('hidden');
+            } else {
+                npcBox.classList.add('hidden');
+            }
+
+            // Text Setup
+            document.getElementById('scene-title').innerText = scene.title;
+            document.getElementById('scene-text').innerText = scene.text;
+
+            // Render Choices with Rich Indicators
+            const choicesContainer = document.getElementById('choices-container');
+            choicesContainer.innerHTML = '';
+
+            scene.choices.forEach(choice => {
+                let canChoose = true;
+                let reqReason = '';
+
+                // Stat requirements check
+                if (choice.req) {
+                    for (let stat in choice.req) {
+                        if (gameState.stats[stat] < choice.req[stat]) {
+                            canChoose = false;
+                            reqReason = `Нужно ${stat.toUpperCase()} >= ${choice.req[stat]}`;
+                        }
+                    }
+                }
+
+                // Item requirements check
+                if (choice.reqItem) {
+                    const countNeeded = choice.reqCount || 1;
+                    const invItem = gameState.inventory.find(i => i.id === choice.reqItem);
+                    if (!invItem || invItem.count < countNeeded) {
+                        canChoose = false;
+                        const itemName = ITEMS_DB[choice.reqItem]?.name || choice.reqItem;
+                        reqReason = `Требуется: ${itemName} (${countNeeded})`;
+                    }
+                }
+
+                // Risk styles
+                let borderStyle = 'border-apoc-border hover:border-apoc-green';
+                let iconColor = 'text-apoc-green';
+
+                if (choice.risk === 'danger') {
+                    borderStyle = 'border-red-900/60 hover:border-red-500';
+                    iconColor = 'text-red-400';
+                } else if (choice.risk === 'warn') {
+                    borderStyle = 'border-amber-900/60 hover:border-amber-400';
+                    iconColor = 'text-amber-400';
+                }
+
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left p-3 rounded-xl border font-mono text-xs transition-all flex justify-between items-center ${
+                    canChoose 
+                        ? `bg-apoc-panel ${borderStyle} hover:bg-black/90 text-gray-200` 
+                        : 'bg-black/40 border-gray-900 text-gray-600 cursor-not-allowed'
+                }`;
+
+                btn.innerHTML = `
+                    <div class="flex items-center space-x-2.5">
+                        <i class="fa-solid ${choice.icon || 'fa-chevron-right'} ${iconColor} text-sm w-4 text-center"></i>
+                        <span>${choice.text}</span>
+                    </div>
+                    ${!canChoose ? `<span class="text-[10px] text-red-400 font-bold ml-2">[${reqReason}]</span>` : '<i class="fa-solid fa-chevron-right text-gray-600 text-[10px]"></i>'}
+                `;
+
+                if (canChoose) {
+                    btn.onclick = () => {
+                        triggerHaptic('impact', 'light');
+                        renderScene(choice.next);
+                    };
+                }
+
+                choicesContainer.appendChild(btn);
+            });
+
+            updateUI();
+            checkGameOver();
+        }
+
+        // STATS MODIFIERS
+        function updateStat(stat, delta) {
+            if (gameState.stats[stat] !== undefined) {
+                gameState.stats[stat] += delta;
+                gameState.stats[stat] = Math.max(0, Math.min(100, gameState.stats[stat]));
+
+                const overlay = document.getElementById('screen-overlay');
+                if (delta < 0 && (stat === 'hp' || stat === 'sanity')) {
+                    overlay.className = 'absolute inset-0 pointer-events-none z-40 damage-effect';
+                    setTimeout(() => overlay.className = 'absolute inset-0 pointer-events-none z-40', 400);
+                    triggerHaptic('notification', 'warning');
+                } else if (delta > 0 && stat === 'rad') {
+                    overlay.className = 'absolute inset-0 pointer-events-none z-40 rad-effect';
+                    setTimeout(() => overlay.className = 'absolute inset-0 pointer-events-none z-40', 500);
+                }
+            }
+        }
+
+        function passDay() {
+            gameState.day += 1;
+            logDiary(`День ${gameState.day}: Выживание продолжается.`);
+            triggerHaptic('notification', 'success');
+        }
+
+        // INVENTORY SYSTEM WITH MODAL PREVIEWS
+        function addItem(itemId, count = 1) {
+            const existing = gameState.inventory.find(i => i.id === itemId);
+            if (existing) {
+                existing.count += count;
+            } else {
+                gameState.inventory.push({ id: itemId, count: count });
+            }
+            showFeedback(`Получено: ${ITEMS_DB[itemId]?.name || itemId} (+${count})`);
+            updateUI();
+        }
+
+        function removeItem(itemId, count = 1) {
+            const existing = gameState.inventory.find(i => i.id === itemId);
+            if (existing) {
+                existing.count -= count;
+                if (existing.count <= 0) {
+                    gameState.inventory = gameState.inventory.filter(i => i.id !== itemId);
+                }
+            }
+            updateUI();
+        }
+
+        function inspectItem(itemId) {
+            const item = ITEMS_DB[itemId];
+            if (!item) return;
+
+            document.getElementById('item-modal-title').innerText = item.name;
+            document.getElementById('item-modal-desc').innerText = item.desc;
+            document.getElementById('item-modal-img').style.backgroundImage = `url('${item.img}')`;
+
+            let statsText = `ВЕС: ${item.weight} кг`;
+            if (item.val) statsText += ` | ВОССТАНОВЛЕНИЕ: +${item.val}`;
+            if (item.rad) statsText += ` | РАДИАЦИЯ: +${item.rad}%`;
+            document.getElementById('item-modal-stats').innerText = statsText;
+
+            const useBtn = document.getElementById('item-modal-use-btn');
+            if (['food', 'drink', 'drink_dirty', 'heal', 'antirad'].includes(item.type)) {
+                useBtn.classList.remove('hidden');
+                useBtn.onclick = () => {
+                    useItem(itemId);
+                    closeItemModal();
+                };
+            } else {
+                useBtn.classList.add('hidden');
+            }
+
+            document.getElementById('item-modal').classList.remove('hidden');
+            triggerHaptic('selection');
+        }
+
+        function closeItemModal() {
+            document.getElementById('item-modal').classList.add('hidden');
+        }
+
+        function useItem(itemId) {
+            const item = ITEMS_DB[itemId];
+            if (!item) return;
+
+            if (item.type === 'food') updateStat('hunger', item.val);
+            else if (item.type === 'drink') updateStat('thirst', item.val);
+            else if (item.type === 'drink_dirty') { updateStat('thirst', item.val); updateStat('rad', item.rad || 5); }
+            else if (item.type === 'heal') updateStat('hp', item.val);
+            else if (item.type === 'antirad') updateStat('rad', -item.val);
+
+            removeItem(itemId, 1);
+            triggerHaptic('impact', 'medium');
+            showFeedback(`Использовано: ${item.name}`);
+            updateUI();
+        }
+
+        function showFeedback(text) {
+            const box = document.getElementById('action-feedback');
+            box.innerText = text;
+            box.classList.remove('hidden');
+            setTimeout(() => box.classList.add('hidden'), 3000);
+        }
+
+        function logDiary(entry) {
+            gameState.diary.unshift(`[День ${gameState.day}] ${entry}`);
+            renderDiary();
+        }
+
+        function renderDiary() {
+            const box = document.getElementById('diary-entries');
+            box.innerHTML = '';
+            gameState.diary.forEach(e => {
+                const div = document.createElement('div');
+                div.className = 'bg-apoc-panel p-2.5 rounded-lg border border-apoc-border text-gray-300';
+                div.innerText = e;
+                box.appendChild(div);
+            });
+        }
+
+        // UPDATE UI STATUS BARS & INVENTORY
+        function updateUI() {
+            document.getElementById('stat-day').innerText = gameState.day;
+            document.getElementById('stat-location').innerText = gameState.locationName;
+
+            const statsMap = [
+                { key: 'hp', bar: 'bar-hp', val: 'val-hp' },
+                { key: 'hunger', bar: 'bar-hunger', val: 'val-hunger' },
+                { key: 'thirst', bar: 'bar-thirst', val: 'val-thirst' },
+                { key: 'energy', bar: 'bar-energy', val: 'val-energy' },
+                { key: 'sanity', bar: 'bar-sanity', val: 'val-sanity' },
+                { key: 'rad', bar: 'bar-rad', val: 'val-rad' }
+            ];
+
+            statsMap.forEach(s => {
+                const v = Math.round(gameState.stats[s.key]);
+                document.getElementById(s.val).innerText = `${v}%`;
+                document.getElementById(s.bar).style.width = `${v}%`;
+            });
+
+            // Inventory List with High-Res Thumbnail Art
+            const invGrid = document.getElementById('inventory-grid');
+            invGrid.innerHTML = '';
+
+            let totalWeight = 0;
+            let totalSlots = 0;
+
+            gameState.inventory.forEach(slot => {
+                const item = ITEMS_DB[slot.id];
+                if (!item) return;
+
+                totalSlots += 1;
+                totalWeight += (item.weight || 0.1) * slot.count;
+
+                const div = document.createElement('div');
+                div.className = 'bg-apoc-panel p-2 rounded-xl border border-apoc-border flex items-center justify-between font-mono text-xs hover:border-apoc-green transition-all cursor-pointer';
+                div.onclick = () => inspectItem(slot.id);
+
+                div.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-lg bg-cover bg-center border border-apoc-border shrink-0" style="background-image: url('${item.img}')"></div>
+                        <div>
+                            <div class="text-gray-200 font-bold">${item.name} <span class="text-apoc-amber">x${slot.count}</span></div>
+                            <div class="text-[10px] text-gray-400 truncate max-w-[150px]">${item.desc}</div>
+                        </div>
+                    </div>
+                    <button class="px-2 py-1 bg-black/50 border border-apoc-border text-apoc-green rounded hover:bg-apoc-green hover:text-black transition-colors text-[10px]">
+                        Инфо
+                    </button>
+                `;
+                invGrid.appendChild(div);
+            });
+
+            document.getElementById('inv-capacity').innerText = `${totalSlots}/${gameState.maxSlots}`;
+            document.getElementById('weight-capacity').innerText = `ВЕС: ${totalWeight.toFixed(1)} кг`;
+
+            renderCrafting();
+        }
+
+        function renderCrafting() {
+            const box = document.getElementById('crafting-list');
+            box.innerHTML = '';
+
+            CRAFT_RECIPES.forEach(recipe => {
+                let canCraft = true;
+                let reqText = [];
+
+                for (let reqId in recipe.req) {
+                    const countNeeded = recipe.req[reqId];
+                    const invItem = gameState.inventory.find(i => i.id === reqId);
+                    const hasCount = invItem ? invItem.count : 0;
+                    if (hasCount < countNeeded) canCraft = false;
+                    reqText.push(`${ITEMS_DB[reqId]?.name || reqId}: ${hasCount}/${countNeeded}`);
+                }
+
+                const div = document.createElement('div');
+                div.className = 'bg-apoc-panel p-2.5 rounded-xl border border-apoc-border flex justify-between items-center font-mono text-xs';
+                div.innerHTML = `
+                    <div>
+                        <div class="font-bold text-gray-200">${recipe.name}</div>
+                        <div class="text-[10px] text-gray-400">Требуется: ${reqText.join(', ')}</div>
+                    </div>
+                    <button onclick="craftItem('${recipe.id}')" ${!canCraft ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg text-[10px] ${
+                        canCraft 
+                            ? 'bg-apoc-darkgreen border border-apoc-green text-apoc-green hover:bg-apoc-green hover:text-black' 
+                            : 'bg-black/40 border border-gray-800 text-gray-600 cursor-not-allowed'
+                    }">
+                        Создать
+                    </button>
+                `;
+                box.appendChild(div);
+            });
+        }
+
+        function craftItem(recipeId) {
+            const recipe = CRAFT_RECIPES.find(r => r.id === recipeId);
+            if (!recipe) return;
+
+            for (let reqId in recipe.req) removeItem(reqId, recipe.req[reqId]);
+            for (let resId in recipe.res) addItem(resId, recipe.res[resId]);
+
+            triggerHaptic('notification', 'success');
+            showFeedback(`Скрафчено: ${recipe.name}`);
+            updateUI();
+        }
+
+        // SCAVENGE / MAP ENGINE
+        function startScavenge(zone) {
+            if (gameState.stats.energy < 15) {
+                showModal('Истощение', 'У вас недостаточно энергии для продолжения вылазки.');
+                return;
+            }
+
+            updateStat('energy', -15);
+            updateStat('hunger', -10);
+            updateStat('thirst', -10);
+
+            const resultBox = document.getElementById('scavenge-result');
+            const resultText = document.getElementById('scavenge-text');
+            const lootBox = document.getElementById('scavenge-loot');
+
+            resultBox.classList.remove('hidden');
+            lootBox.innerHTML = '';
+
+            const rand = Math.random();
+            let text = '';
+            let itemsFound = [];
+
+            if (zone === 'suburbs') {
+                if (rand > 0.4) {
+                    text = 'Вы прочесали брошенные жилые застройки. В одном из кухонных гарнитуров удалось раздобыть консервы и бутылку воды.';
+                    itemsFound.push({ id: 'canned_food', count: 1 }, { id: 'dirty_water', count: 1 });
+                } else {
+                    text = 'Улицы пригорода оказались пусты. Найдено лишь немного металлолома.';
+                    itemsFound.push({ id: 'scrap', count: 2 });
+                }
+            } else if (zone === 'factory') {
+                updateStat('rad', 10);
+                if (rand > 0.5) {
+                    text = 'В заброшенных цехах завода вы обнаружили запасы металлолома и угольный фильтр.';
+                    itemsFound.push({ id: 'scrap', count: 3 }, { id: 'filter', count: 1 });
+                } else {
+                    text = 'Вы оступились на обрушившемся пролете и получили ушиб.';
+                    updateStat('hp', -10);
+                }
+            } else if (zone === 'bunker') {
+                updateStat('rad', 25);
+                if (rand > 0.3) {
+                    text = 'Среди заброшенных лабораторий бункера вам удалось вскрыть герметичный контейнер со шприцами антирадина и медикаментами!';
+                    itemsFound.push({ id: 'medkit', count: 1 }, { id: 'anti_rad', count: 1 });
+                } else {
+                    text = 'Высокий уровень радиации вынудил вас отступить из подземных горизонтов.';
+                    updateStat('sanity', -15);
+                }
+            }
+
+            resultText.innerText = text;
+
+            itemsFound.forEach(item => {
+                addItem(item.id, item.count);
+                const tag = document.createElement('span');
+                tag.className = 'bg-apoc-darkgreen border border-apoc-green text-apoc-green px-2 py-0.5 rounded text-[10px]';
+                tag.innerText = `+${item.count} ${ITEMS_DB[item.id]?.name || item.id}`;
+                lootBox.appendChild(tag);
+            });
+
+            triggerHaptic('impact', 'heavy');
+            updateUI();
+            checkGameOver();
+        }
+
+        // GAME OVER CHECK
+        function checkGameOver() {
+            if (gameState.stats.hp <= 0) {
+                triggerGameOver('Вы погибли от полученных ран и физического истощения.');
+            } else if (gameState.stats.rad >= 100) {
+                triggerGameOver('Лучевая болезнь оказалась смертельной. Ваш организм сожжен радиацией.');
+            } else if (gameState.stats.sanity <= 0) {
+                triggerGameOver('Рассудок окончательно покинул вас. Вы стали еще одной тенью Пустоши.');
+            }
+        }
+
+        function triggerGameOver(reason) {
+            showModal('СМЕРТЬ В ПУСТОШИ', reason, [
+                { text: 'Начать заново', action: 'resetGame()' }
+            ]);
+        }
+
+        // TAB NAVIGATION
+        function switchTab(tabId) {
+            triggerHaptic('selection');
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+
+            ['story', 'inventory', 'scavenge', 'log'].forEach(t => {
+                const btn = document.getElementById(`nav-${t}`);
+                if (t === tabId) {
+                    btn.className = 'py-2 flex flex-col items-center text-apoc-green';
+                } else {
+                    btn.className = 'py-2 flex flex-col items-center text-gray-400 hover:text-gray-200';
+                }
+            });
+        }
+
+        function switchSubTab(sub) {
+            triggerHaptic('selection');
+            if (sub === 'inv') {
+                document.getElementById('subtab-inv').classList.remove('hidden');
+                document.getElementById('subtab-craft').classList.add('hidden');
+                document.getElementById('btn-sub-inv').className = 'flex-1 py-2 text-center text-apoc-green border-b-2 border-apoc-green font-bold';
+                document.getElementById('btn-sub-craft').className = 'flex-1 py-2 text-center text-gray-400 hover:text-white';
+            } else {
+                document.getElementById('subtab-inv').classList.add('hidden');
+                document.getElementById('subtab-craft').classList.remove('hidden');
+                document.getElementById('btn-sub-craft').className = 'flex-1 py-2 text-center text-apoc-green border-b-2 border-apoc-green font-bold';
+                document.getElementById('btn-sub-inv').className = 'flex-1 py-2 text-center text-gray-400 hover:text-white';
+            }
+        }
+
+        // MODAL SYSTEM
+        function showModal(title, msg, buttons = [{ text: 'Понятно', action: 'closeModal()' }]) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-msg').innerText = msg;
+            
+            const btnBox = document.getElementById('modal-buttons');
+            btnBox.innerHTML = '';
+
+            buttons.forEach(b => {
+                const btn = document.createElement('button');
+                btn.className = 'px-4 py-2 bg-apoc-darkgreen border border-apoc-green text-apoc-green rounded-lg hover:bg-apoc-green hover:text-black transition-colors';
+                btn.innerText = b.text;
+                btn.onclick = () => eval(b.action);
+                btnBox.appendChild(btn);
+            });
+
+            document.getElementById('modal-container').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        // SAVING / LOAD
+        function saveGame(notify = false) {
+            localStorage.setItem('apoc_save_data_v2', JSON.stringify(gameState));
+            if (notify) {
+                triggerHaptic('notification', 'success');
+                showFeedback('Прогресс сохранен!');
+            }
+        }
+
+        function loadGame() {
+            const data = localStorage.getItem('apoc_save_data_v2');
+            if (data) {
+                try { gameState = JSON.parse(data); } catch(e) {}
+            }
+        }
+
+        function resetGamePrompt() {
+            showModal('Сброс игры', 'Вы уверены, что хотите начать заново? Весь прогресс будет сброшен.', [
+                { text: 'Да, начать заново', action: 'resetGame()' },
+                { text: 'Отмена', action: 'closeModal()' }
+            ]);
+        }
+
+        function resetGame() {
+            localStorage.removeItem('apoc_save_data_v2');
+            location.reload();
+        }
+
+        setInterval(() => saveGame(false), 30000);
+
+        // INITIAL LOAD
+        window.onload = function() {
+            loadGame();
+            renderScene(gameState.currentScene || 'start_1');
+            renderDiary();
+            updateUI();
+        };
+    </script>
+</body>
+</html>
